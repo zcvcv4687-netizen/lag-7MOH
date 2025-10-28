@@ -8,7 +8,7 @@ import threading
 import time
 
 app = Flask(__name__)
-DB_FILE = "lags.json"
+DB_FILE = "/tmp/lags.json"  # مسموح في Vercel فقط هنا
 active_threads = {}
 
 # تحميل قاعدة البيانات
@@ -19,9 +19,17 @@ def load_db():
     except:
         return {"active": {}}
 
+# حفظ قاعدة البيانات
 def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"[ERROR] Save failed: {e}")
+
+# إنشاء الملف إذا ما كانش موجود
+if not os.path.exists(DB_FILE):
+    save_db({"active": {}})
 
 # هجوم اللاغ
 def attack(uid):
@@ -49,17 +57,20 @@ def attack(uid):
 # تنظيف تلقائي
 def cleanup_expired():
     while True:
-        db = load_db()
-        now = datetime.now()
-        to_remove = []
-        for uid, data in db.get("active", {}).items():
-            end = datetime.fromisoformat(data["end_time"])
-            if now >= end:
-                to_remove.append(uid)
-        for uid in to_remove:
-            db["active"].pop(uid, None)
-            active_threads.pop(uid, None)
-        save_db(db)
+        try:
+            db = load_db()
+            now = datetime.now()
+            to_remove = []
+            for uid, data in db.get("active", {}).items():
+                end = datetime.fromisoformat(data["end_time"])
+                if now >= end:
+                    to_remove.append(uid)
+            for uid in to_remove:
+                db["active"].pop(uid, None)
+                active_threads.pop(uid, None)
+            save_db(db)
+        except Exception as e:
+            print(f"[CLEANUP ERROR] {e}")
         time.sleep(3600)  # كل ساعة
 
 threading.Thread(target=cleanup_expired, daemon=True).start()
@@ -118,6 +129,6 @@ def start_lag():
         "message": f"بدأ اللاغ لمدة {days} أيام!"
     })
 
-# Vercel يحتاج هذا
+# Vercel entrypoint
 if __name__ == "__main__":
     app.run()
